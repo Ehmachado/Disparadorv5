@@ -394,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderContacts(); updatePreview();
   }
 
-  /* ===== Campo 1: Contatos (preferir “nome” exato) ===== */
+  /* ===== Campo 1: Contatos ===== */
   function guessColumns(headersRow, rows){
     const hnorm = headersRow.map(h=> normalizeKey(stripAccents(h)));
     let iNome = hnorm.findIndex(h=> h === 'nome');
@@ -784,7 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setCollapsed(wrap, true);
     });
 
-    // Copiar (sem imagem) e abrir chat — abre com mensagem pré-carregada
+    // Copiar (sem imagem) e abrir chat — com mensagem pré-carregada em texto
     const btnCopyOpen = wrap.querySelector('[data-copyopen]');
     if(btnCopyOpen){
       btnCopyOpen.addEventListener('click', async ()=>{
@@ -799,12 +799,21 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // Abrir chat (este) — sem mensagem pré-carregada, sem copiar antes
+    // **ALTERADO**: Abrir chat (este) — copiar mensagem COM imagem para a área de transferência e abrir chat sem prefill
     const btnChat = wrap.querySelector('[data-openchat]');
     if(btnChat){
-      btnChat.addEventListener('click', ()=>{
-        openTeamsChatNoPrefill(c.email);
+      btnChat.addEventListener('click', async ()=>{
+        const bodyClean = getEditorHTMLClean();
+        let ensureImg = imageCacheByContact.get(idx);
+        if(!ensureImg){ ensureImg = await buildPrintForContact(idx); imageCacheByContact.set(idx, ensureImg); }
+        await copyMessage(
+          buildMessageHTML(c, ensureImg?.dataUrl || '', bodyClean),
+          buildMessagePlainText(c, bodyClean),
+          ensureImg?.blob
+        );
+        openTeamsChatNoPrefill(c.email); // sem texto pré-carregado
         setCollapsed(wrap, true);
+        log('Conteúdo com imagem copiado. No Teams, use Ctrl+V para colar.');
       });
     }
   }
