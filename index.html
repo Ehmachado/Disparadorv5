@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Disparador — Print compacto com cópia automática</title>
+
+<!-- Dependências (mantidas; não quebram nada mesmo sem exportar) -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+
+<style>
+  :root{--bb-azul:#0033a0;--bg:#f6f7fb;--card:#fff;--muted:#6b7280;--radius:16px}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(135deg,#f0f3ff,#f8fafc);color:#111827}
+  header{padding:20px 24px;background:var(--bb-azul);color:#fff;display:flex;align-items:center;justify-content:space-between}
+  header h1{margin:0;font-size:20px;font-weight:700}
+  .pill{display:inline-flex;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;background:#ecfeff;color:#0c4a6e}
+  .container{max-width:1200px;margin:24px auto;padding:0 16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 6px 24px rgba(3,7,18,.08);padding:16px}
+  .card h2{margin:0 0 12px;font-size:16px}
+  .helper{font-size:12px;color:var(--muted);margin-top:6px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  textarea,input[type="text"],select{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font:inherit}
+  textarea{min-height:120px;resize:vertical}
+  .btn{appearance:none;border:0;background:var(--bb-azul);color:#fff;padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer}
+  .btn.ghost{background:#fff;color:#0f172a;border:1px solid #e5e7eb}
+  .btn.dark{background:#0f172a}
+  .table-wrap{border:1px solid #e5e7eb;border-radius:12px;overflow:auto;background:#fff}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px 10px;border-bottom:1px solid #f1f5f9;text-align:left;white-space:nowrap}
+  thead th{background:#f8fafc;font-size:12px;color:#475569;text-transform:uppercase;letter-spacing:.02em;position:sticky;top:0;z-index:1}
+  .list{display:grid;gap:12px}
+  .msg{border:1px dashed #cbd5e1;border-radius:12px;padding:12px;background:#fcfcff}
+  .muted{color:var(--muted)}
+  .badge{font-size:12px;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3730a3}
+  .right{margin-left:auto}
+  .ok{background:#ecfdf5;border:1px solid #bbf7d0;color:#065f46;border-radius:12px;padding:6px 10px;font-size:12px}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;padding:10px;font-size:12px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .small{font-size:12px}
+  .sheet-paste{width:100%;min-height:160px;border:1.5px dashed #94a3b8;border-radius:12px;background:#fff;padding:10px;overflow:auto}
+  .sheet-paste:focus{outline:2px solid #93c5fd; outline-offset:2px}
+  .ghost-table{max-height:220px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;margin-top:8px}
+  .richmsg p{margin:.5em 0}
+  .separator{margin:10px 0;height:1px;background:#e5e7eb}
+  .imgwrap{display:flex;flex-direction:column;gap:8px}
+  .richmsg img{max-width:520px;width:100%;height:auto;border:1px solid #e5e7eb;border-radius:8px}
+  .rte-bar{display:flex;gap:6px;margin:8px 0}
+  .rte-btn{border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:6px 10px;cursor:pointer;font-weight:600}
+  .rte-btn.active{border-color:#c7d2fe;background:#eef2ff}
+  #messageBody{min-height:140px;border:1px solid #e5e7eb;border-radius:12px;padding:10px;background:#fff;overflow:auto}
+  #messageBody:focus{outline:2px solid #93c5fd; outline-offset:2px}
+  #messageBody:empty:before{content:attr(data-placeholder); color:#9ca3af}
+  #messageBody p{margin:.6em 0}
+  #messageBody b,#messageBody strong{font-weight:700}
+  #messageBody i,#messageBody em{font-style:italic}
+  #messageBody u{text-decoration:underline}
+  .msg__head{display:flex; gap:8px; align-items:center; margin-bottom:6px}
+  .msg__toggle{margin-left:auto; font-size:12px; padding:6px 10px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer}
+  .msg.collapsed{background:#f8fafc}
+  .msg.collapsed .msg__body{display:none}
+  #logs{margin-top:8px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Disparador — Print compacto</h1>
+    <small>Colar como planilha • Contatos salvos • Copiar mensagem com imagem</small>
+  </div>
+  <div class="pill">100% local</div>
+</header>
+
+<div class="container">
+  <div class="grid">
+    <!-- 1) Contatos -->
+    <section class="card">
+      <h2>1) Contatos</h2>
+      <div class="helper">Cole tabela com cabeçalhos (flexível): <b>prefixo/pref/agência</b>, <b>nome</b>, <b>email/e-mail/mail/contato</b>. Preferência explícita pela coluna <b>“nome”</b> para o nome da pessoa.</div>
+      <textarea id="contactsInput" placeholder="Exemplo:
+prefixo nome email
+123 Maria Clara Souza maria@empresa.com
+456 João Pedro joao@empresa.com"></textarea>
+      <div class="toolbar" style="margin-top:8px;">
+        <button class="btn" id="loadContacts">Carregar contatos</button>
+        <button class="btn ghost" id="clearContacts">Limpar</button>
+        <button class="btn ghost" id="refreshContacts">Atualizar</button>
+        <input id="searchBox" type="text" placeholder="Filtrar por nome, email ou prefixo..." />
+        <label class="small" style="display:flex; align-items:center; gap:6px">
+          <input type="checkbox" id="keepContacts"> Manter contatos salvos neste navegador
+        </label>
+        <div class="right"><span id="contactStats" class="badge">0 contatos</span></div>
+      </div>
+      <div class="table-wrap" style="margin-top:10px; max-height:280px; overflow:auto">
+        <table id="contactsTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll"></th>
+              <th>Prefixo</th>
+              <th>Nome</th>
+              <th>Email</th>
+              <th>Linhas</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="logs" class="helper"></div>
+    </section>
+
+    <!-- 2) Mensagem + PRÉVIA -->
+    <section class="card">
+      <h2>2) Mensagem</h2>
+      <div class="helper">
+        Personalize a saudação usando <b>{nome}</b> para o primeiro nome.<br>
+        Ex.: <code>Olá {nome}, tudo bem?</code>
+      </div>
+
+      <!-- Saudação personalizada -->
+      <div class="row" style="margin:8px 0">
+        <input id="greetingInput" type="text" placeholder="Saudação (use {nome}) — ex.: Olá {nome}, tudo bem?" />
+        <button class="btn ghost" id="saveGreeting" title="Salvar saudação no navegador">Salvar saudação</button>
+      </div>
+
+      <div class="rte-bar">
+        <button class="rte-btn" data-cmd="bold" title="Negrito (Ctrl+B)">B</button>
+        <button class="rte-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
+        <button class="rte-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><u>U</u></button>
+        <button class="btn ghost right" id="refreshMsg">Atualizar</button>
+      </div>
+
+      <div id="messageBody" contenteditable="true" data-placeholder="Escreva aqui o texto após a saudação. Use os botões para negrito/itálico/sublinhado."></div>
+
+      <div class="helper">A imagem (print) inclui o <b>título</b>, o <b>cabeçalho</b> e as <b>linhas do contato</b>.</div>
+      <div style="margin-top:8px">
+        <label class="muted">Prévia:</label>
+        <div class="msg" id="previewBox">
+          <div class="richmsg"><p>Olá Fulano, tudo bem?</p><p class="muted">[sua mensagem]</p></div>
+          <div class="separator"></div>
+          <div class="imgwrap"><div class="muted">[Imagem do print aparecerá aqui]</div></div>
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:8px">
+        <button class="btn" id="generateMsgs">Gerar mensagens</button>
+      </div>
+    </section>
+
+    <!-- 3) Planilha -->
+    <section class="card">
+      <h2>3) Planilha — cole aqui (Ctrl+V)</h2>
+      <div class="helper">Cole direto do Excel/Sheets. Informe um <b>Título da planilha</b> para ir no print.</div>
+      <input id="sheetTitle" type="text" placeholder="Título da planilha (ex.: Relatório por Prefixo)" />
+      <div id="sheetPaste" class="sheet-paste" contenteditable="true" spellcheck="false"></div>
+      <div class="row" style="margin-top:8px">
+        <label>Linha do cabeçalho:</label>
+        <input id="headerRow" type="text" placeholder="1 (padrão)" style="width:120px">
+        <button class="btn" id="usePasted">Usar dados colados</button>
+        <button class="btn ghost" id="clearAttach" disabled>Limpar dados</button>
+        <button class="btn ghost" id="refreshSheet">Atualizar</button>
+        <div class="right"><span id="attachStats" class="badge">Sem dados</span></div>
+      </div>
+      <div id="errorBox" class="helper"></div>
+
+      <div class="helper" style="margin-top:6px">Pré-visualização (rolagem horizontal):</div>
+      <div id="sheetPreview" class="ghost-table" style="display:none"></div>
+
+      <div class="toolbar" style="margin-top:8px">
+        <button class="btn" id="downloadZip" disabled>Abrir chat no Teams (teste)</button>
+      </div>
+      <div class="helper">Associação por: <b>prefixo</b> OU <b>dependência</b> OU <b>nome</b> igual ao nome do contato.</div>
+    </section>
+
+    <!-- 4) Saída -->
+    <section class="card" style="grid-column: span 2">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <h2 style="margin:0">4) Mensagens geradas (copiar & colar)</h2>
+        <div class="row" style="gap:8px; align-items:center">
+          <label class="small" for="sortOrder">Ordenar:</label>
+          <select id="sortOrder" style="width:auto">
+            <option value="original" selected>Original</option>
+            <option value="nome_az">Nome (A→Z)</option>
+          </select>
+          <button class="btn ghost" id="refreshAll">Atualizar</button>
+        </div>
+      </div>
+      <div class="helper">“Copiar mensagem” copia HTML com imagem (quando suportado). Abra o chat e cole (Ctrl+V).</div>
+      <div id="output" class="list"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  /* ===== Logs/erros ===== */
+  const logBox = document.getElementById('logs');
+  const log = (m)=>{ if(logBox) logBox.innerHTML = '<span class="ok">OK:</span> ' + m; };
+  const logErr = (m)=>{ if(logBox) logBox.innerHTML = '<div class="err"><b>Erro:</b> ' + m + '</div>'; };
+  window.addEventListener('error', e=> logErr(e?.message || 'Erro de script'));
+
+  /* ===== Estado ===== */
+  let contacts = [];
+  let filteredContactsIdx = [];
+  let headers = [];
+  let rowsAll = [];
+  const groupedRowsByContact = new Map();
+  const imageCacheByContact = new Map();
+
+  const el = (s)=>document.querySelector(s);
+  const normalizeKey = s => String(s||'').trim().toLowerCase();
+  const stripAccents = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const equalsLoose = (a,b)=> stripAccents(a).trim().toLowerCase() === stripAccents(b).trim().toLowerCase();
+  const debounce = (fn,ms=250)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms)} };
+
+  /* ===== Saudação personalizada ===== */
+  const DEFAULT_GREETING = 'Olá {nome}, tudo bem?';
+  const greetingInput = el('#greetingInput');
+  const saveGreetingBtn = el('#saveGreeting');
+
+  function loadGreeting(){
+    const saved = localStorage.getItem('customGreeting');
+    greetingInput.value = saved && saved.trim() ? saved : DEFAULT_GREETING;
+  }
+  function saveGreeting(){
+    const v = (greetingInput.value || '').trim() || DEFAULT_GREETING;
+    localStorage.setItem('customGreeting', v);
+    log('Saudação salva.');
+    updatePreview();
+  }
+  function makeGreeting(contact){
+    const tpl = (greetingInput.value || DEFAULT_GREETING);
+    const nome = firstName(contact?.nome);
+    return tpl
+      .replace(/\{nome\}/gi, nome)
+      .replace(/<\s*primeiro\s+nome\s*>/gi, nome);
+  }
+  loadGreeting();
+  saveGreetingBtn.addEventListener('click', saveGreeting);
+  greetingInput.addEventListener('input', debounce(()=>updatePreview(),120));
+
+  /* ===== Delimitadores robustos ===== */
+  function detectDelimiter(text){
+    const sample = text.split(/\r?\n/).slice(0,8).join('\n');
+    const count = ch => (sample.match(new RegExp('\\' + ch, 'g'))||[]).length;
+    const scores = [
+      {d:'\t', n:count('\t')},
+      {d:';', n:count(';')},
+      {d:',', n:count(',')}
+    ].sort((a,b)=>b.n-a.n);
+    if (scores[0].n>0) return scores[0].d;
+    return / {2,}/.test(sample) ? ' +' : '\t';
+  }
+  function splitFlexible(line, sep){
+    if (sep === ' +') { return line.trim().split(/ {2,}/); }
+    return line.split(sep);
+  }
+
+  /* ===== Campo 3: colagem/preview ===== */
+  const sheetPaste = el('#sheetPaste');
+  const sheetPreview = el('#sheetPreview');
+  sheetPaste.addEventListener('paste', ()=>{ setTimeout(refreshPreviewFromEditable,0); });
+  sheetPaste.addEventListener('keyup', debounce(refreshPreviewFromEditable, 200));
+
+  function tableFromAoA(aoa){
+    const tbl=document.createElement('table');
+    const thead=document.createElement('thead');
+    const tbody=document.createElement('tbody');
+    if(aoa.length){
+      const trh=document.createElement('tr');
+      aoa[0].forEach(c=>{ const th=document.createElement('th'); th.textContent=String(c||''); trh.appendChild(th); });
+      thead.appendChild(trh);
+      aoa.slice(1).forEach(r=>{
+        const tr=document.createElement('tr');
+        aoa[0].forEach((_,i)=>{ const td=document.createElement('td'); td.textContent=String(r[i]??''); tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+    }
+    tbl.appendChild(thead); tbl.appendChild(tbody);
+    return tbl;
+  }
+
+  function extractFromEditable(container){
+    const table = container.querySelector('table');
+    if (table){
+      const rows = Array.from(table.rows);
+      const aoa = rows.map(tr => Array.from(tr.cells).map(td => (td.innerText||'').trim()));
+      if (!aoa.length) return {headers:[], rowsAoA:[]};
+      return { headers: aoa[0], rowsAoA: aoa.slice(1) };
+    }
+    const txt = container.innerText || '';
+    const lines = txt.split(/\r?\n/).filter(l=>l.trim().length);
+    if (!lines.length) return {headers:[], rowsAoA:[]};
+    const sep = detectDelimiter(txt);
+    const aoa = lines.map(l=> splitFlexible(l, sep).map(x=>String(x??'').trim()));
+    const maxCols = aoa.reduce((m,r)=>Math.max(m,r.length),0);
+    aoa.forEach(r=>{ while(r.length<maxCols) r.push(''); });
+    return { headers: aoa[0], rowsAoA: aoa.slice(1) };
+  }
+
+  function refreshPreviewFromEditable(){
+    const { headers: h, rowsAoA } = extractFromEditable(sheetPaste);
+    if (!h.length || !rowsAoA.length){
+      sheetPreview.style.display='none'; sheetPreview.innerHTML='';
+      return;
+    }
+    const aoa = [h, ...rowsAoA];
+    sheetPreview.innerHTML='';
+    sheetPreview.appendChild(tableFromAoA(aoa));
+    sheetPreview.style.display='block';
+  }
+
+  function showError(msg, detail){
+    const box = el('#errorBox');
+    if (box) box.innerHTML = `<div class="err"><strong>Erro:</strong> ${msg}${detail?`<br><small>${detail}</small>`:''}</div>`;
+  }
+  function showOk(msg){
+    const box = el('#errorBox');
+    if (box) box.innerHTML = `<div class="ok">${msg}</div>`;
+  }
+
+  el('#usePasted').addEventListener('click', ()=>{
+    try{
+      const { headers: h0, rowsAoA } = extractFromEditable(sheetPaste);
+      if(!rowsAoA.length || !h0.length){ showError('Nada para processar. Cole a planilha e tente de novo.'); return; }
+      const hdrRowInput = el('#headerRow').value.trim();
+      const aoaFull = [h0, ...rowsAoA];
+      let hdrIdx = 0;
+      if(hdrRowInput){
+        const n=parseInt(hdrRowInput,10);
+        if(Number.isInteger(n) && n>=1 && n<=aoaFull.length){ hdrIdx=n-1; }
+      }
+      const headersRow = aoaFull[hdrIdx] || aoaFull[0];
+      headers = headersRow.map(x=>String(x||'').trim());
+      const dataAoA = aoaFull.slice(hdrIdx+1).filter(r=> r.some(v=>String(v).trim()!==''));
+      rowsAll = dataAoA.map(r=>{ const o={}; headers.forEach((h,i)=> o[h]=(r[i]??'').toString().trim()); return o; });
+
+      imageCacheByContact.clear();
+      recountAndAutoselect();
+      el('#attachStats').textContent = `Planilha colada: ${rowsAll.length} linha(s) • ${headers.length} coluna(s)`;
+      el('#clearAttach').disabled = rowsAll.length===0;
+      el('#downloadZip').disabled = rowsAll.length===0;
+      showOk('Dados aplicados com sucesso.');
+      log('Planilha aplicada (Campo 3)');
+      refreshPreviewFromEditable();
+    }catch(err){
+      console.error(err); showError('Falha ao processar a planilha colada.', err?.message || String(err)); logErr(err?.message||String(err));
+    }
+  });
+
+  el('#clearAttach').addEventListener('click', ()=>{
+    headers=[]; rowsAll=[]; groupedRowsByContact.clear(); imageCacheByContact.clear();
+    contacts.forEach(c=> c.attachCount=0);
+    el('#attachStats').textContent='Sem dados'; el('#errorBox').innerHTML='';
+    el('#clearAttach').disabled = true; el('#downloadZip').disabled = true;
+    if(sheetPreview){ sheetPreview.style.display='none'; sheetPreview.innerHTML=''; }
+    sheetPaste.innerHTML='';
+    renderContacts(); updatePreview();
+    log('Planilha limpa');
+  });
+
+  /* ===== Associação Linhas x Contatos ===== */
+  function recountAndAutoselect(){
+    groupedRowsByContact.clear();
+    const depCols = headers.filter(h=>{
+      const k=normalizeKey(h);
+      return k==='dependencia'||k==='dependência'||k.includes('depend');
+    });
+    const nameCols = headers.filter(h=>{
+      const k = normalizeKey(h);
+      return k === 'nome' || k.includes('nome');
+    });
+    const prefixCols = headers.filter(h=>{
+      const k = normalizeKey(h);
+      return k.includes('prefix') || k.includes('agên') || k.includes('agen');
+    });
+
+    contacts.forEach((c, idx)=>{
+      const rowsMatch = [];
+      const px = String(c.prefixo||'').trim();
+      const nomeContato = String(c.nome||'').trim();
+      for(const r of rowsAll){
+        let matched = false;
+        if(prefixCols.length){ for(const h of prefixCols){ if(equalsLoose(r[h]??'', px)){ matched = true; break; } } }
+        if(!matched && depCols.length){ for(const h of depCols){ if(equalsLoose(r[h]??'', nomeContato)){ matched = true; break; } } }
+        if(!matched && nameCols.length){ for(const h of nameCols){ if(equalsLoose(r[h]??'', nomeContato)){ matched = true; break; } } }
+        if(matched) rowsMatch.push(r);
+      }
+      groupedRowsByContact.set(idx, rowsMatch);
+      c.attachCount = rowsMatch.length;
+      if(rowsMatch.length>0) c.selected = true;
+    });
+    renderContacts(); updatePreview();
+  }
+
+  /* ===== Campo 1: Contatos (preferir “nome” exato) ===== */
+  function guessColumns(headersRow, rows){
+    const hnorm = headersRow.map(h=> normalizeKey(stripAccents(h)));
+    let iNome = hnorm.findIndex(h=> h === 'nome');
+    if (iNome < 0) iNome = hnorm.findIndex(h=> h.includes('nome'));
+    let iPrefixo = hnorm.findIndex(h=> /^(prefixo|pref|prefix|agencia|agência)$/.test(h));
+    let iEmail = hnorm.findIndex(h=> /^(email|e-mail|mail|contato|contact)$/.test(h));
+    if(iEmail<0){
+      for(let c=0;c<(rows[0]?.length||0); c++){
+        if(rows.some(r=>/@/.test(String(r[c]||'')))){ iEmail=c; break; }
+      }
+    }
+    return {iPrefixo, iNome, iEmail};
+  }
+
+  function parseContacts(raw){
+    raw = (raw||"").trim(); if(!raw) return [];
+    const sep = detectDelimiter(raw);
+    const lines = raw.split(/\r?\n/).filter(l=>l.trim().length);
+    const aoa = lines.map(l=> splitFlexible(l, sep).map(x=>String(x??'').trim()));
+    const maxCols = aoa.reduce((m,r)=>Math.max(m,r.length),0);
+    aoa.forEach(r=>{ while(r.length<maxCols) r.push(''); });
+
+    let headersC = aoa[0];
+    let dataRows = aoa.slice(1);
+    let {iPrefixo, iNome, iEmail} = guessColumns(headersC, dataRows);
+
+    if (iPrefixo<0 || iNome<0 || iEmail<0){
+      headersC = Array.from({length:maxCols}, (_,i)=>`col${i+1}`);
+      dataRows = aoa;
+      const g = guessColumns(headersC, dataRows);
+      iPrefixo=g.iPrefixo; iNome=g.iNome; iEmail=g.iEmail;
+    }
+
+    if(iPrefixo<0 || iNome<0 || iEmail<0){
+      alert('Não consegui identificar colunas de prefixo, nome (exato “nome”) e email. Verifique a primeira linha ou inclua cabeçalhos.');
+      return [];
+    }
+
+    const data=[];
+    for(const row of dataRows){
+      const prefixo = String(row[iPrefixo]||'').trim();
+      const nome = String(row[iNome]||'').trim();
+      const email = String(row[iEmail]||'').trim();
+      if (!nome && !email) continue;
+      data.push({ prefixo, nome, email, selected:false, attachCount:0 });
+    }
+    return data;
+  }
+
+  function renderContacts(){
+    const tbody = el('#contactsTable tbody'); if(!tbody) return;
+    tbody.innerHTML=''; filteredContactsIdx = [];
+    const q = normalizeKey(el('#searchBox').value);
+    contacts.forEach((c,i)=>{
+      const hay = normalizeKey(`${c.prefixo} ${c.nome} ${c.email}`);
+      if(q && !hay.includes(q)) return;
+      filteredContactsIdx.push(i);
+      const tr=document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" data-idx="${i}" ${c.selected?'checked':''}></td>
+        <td>${c.prefixo||''}</td>
+        <td>${c.nome||''}</td>
+        <td>${c.email||''}</td>
+        <td><span class="badge">${c.attachCount||0}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    el('#contactStats').textContent = `${contacts.length} contato${contacts.length===1?'':'s'} • ${filteredContactsIdx.length} exibido${filteredContactsIdx.length===1?'':'s'}`;
+    const allSelected = filteredContactsIdx.length>0 && filteredContactsIdx.every(i=>contacts[i]?.selected);
+    const someSelected = filteredContactsIdx.some(i=>contacts[i]?.selected);
+    const selectAll = el('#selectAll');
+    if(selectAll){
+      selectAll.checked = allSelected;
+      selectAll.indeterminate = !allSelected && someSelected;
+    }
+  }
+
+  function saveContactsIfEnabled(){
+    if(el('#keepContacts').checked){
+      localStorage.setItem('savedContactsRaw', el('#contactsInput').value || '');
+      localStorage.setItem('keepContacts', '1');
+    } else {
+      localStorage.removeItem('savedContactsRaw');
+      localStorage.setItem('keepContacts', '0');
+    }
+  }
+
+  function loadSavedContactsOnStart(){
+    const keep = localStorage.getItem('keepContacts') === '1'; el('#keepContacts').checked = keep;
+    const saved = localStorage.getItem('savedContactsRaw') || '';
+    if(keep && saved){
+      el('#contactsInput').value = saved;
+      const data = parseContacts(saved);
+      if(data.length){ contacts = data; renderContacts(); }
+    }
+  }
+  loadSavedContactsOnStart();
+
+  el('#keepContacts').addEventListener('change', saveContactsIfEnabled);
+  el('#loadContacts').addEventListener('click', ()=>{
+    const raw = el('#contactsInput').value;
+    const data = parseContacts(raw);
+    if(!data.length) { log('Nenhum contato válido'); renderContacts(); return; }
+    contacts = data; recountAndAutoselect(); renderContacts(); saveContactsIfEnabled();
+    log('Contatos carregados (Campo 1)');
+  });
+  el('#clearContacts').addEventListener('click', ()=>{
+    contacts=[]; el('#contactsInput').value=''; renderContacts(); el('#output').innerHTML=''; saveContactsIfEnabled();
+    log('Contatos limpos');
+  });
+  el('#contactsTable').addEventListener('change', e=>{
+    if(e.target.matches('input[type="checkbox"][data-idx]')){
+      const i=Number(e.target.getAttribute('data-idx'));
+      if(!Number.isNaN(i) && contacts[i]) contacts[i].selected = e.target.checked;
+      renderContacts();
+      updatePreview();
+    }
+  });
+  el('#selectAll').addEventListener('change', e=>{
+    const check = e.target.checked;
+    filteredContactsIdx.forEach(i=>{ if(contacts[i]) contacts[i].selected = check; });
+    renderContacts(); updatePreview();
+  });
+  el('#searchBox').addEventListener('input', debounce(()=>{ renderContacts(); updatePreview(); },150));
+
+  /* ===== Campo 2: Editor ===== */
+  const messageBody = el('#messageBody');
+  document.querySelectorAll('.rte-btn[data-cmd]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const cmd = btn.getAttribute('data-cmd');
+      document.execCommand(cmd, false, null);
+      messageBody.focus();
+      updatePreviewDebounced();
+    });
+  });
+  messageBody.addEventListener('paste', (e)=>{
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+  function sanitizeEditorHTML(html){
+    const allowed = new Set(['B','STRONG','I','EM','U','BR','P']);
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    (function walk(node){
+      const children = Array.from(node.childNodes);
+      for(const ch of children){
+        if(ch.nodeType === 1){
+          if(!allowed.has(ch.tagName)){
+            while(ch.firstChild) node.insertBefore(ch.firstChild, ch);
+            node.removeChild(ch);
+          }else{
+            [...ch.attributes].forEach(a=>{ ch.removeAttribute(a.name); });
+            walk(ch);
+          }
+        }
+      }
+    })(tmp);
+    tmp.querySelectorAll('div').forEach(d=>{
+      const p = document.createElement('p'); p.innerHTML = d.innerHTML; d.replaceWith(p);
+    });
+    return tmp.innerHTML.replace(/&nbsp;/g,' ').replace(/<p>\s*<\/p>/g,'');
+  }
+  function getEditorHTMLClean(){
+    const raw = messageBody.innerHTML || '';
+    const clean = sanitizeEditorHTML(raw);
+    return clean.trim();
+  }
+  const updatePreviewDebounced = debounce(()=>updatePreview(),120);
+
+  /* ===== Helpers de texto/imagem ===== */
+  const titleCaseName = (name)=> !name ? "Fulano" : String(name).toLowerCase().replace(/(^|\s)([a-zá-ú])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  const firstName = (name)=>{
+    if(!name) return "Fulano";
+    const cleaned = String(name).trim().replace(/^(sr\.?|sra\.?|sr\(a\)\.?|dr\.?|dra\.?|prof\.?|profa\.?|mr\.?|mrs\.?|ms\.?)\s+/i, "");
+    const first = cleaned.split(/\s+/)[0] || "Fulano";
+    return first.toLowerCase().replace(/(^|\s)([a-zá-ú])/g,(m,p1,p2)=>p1+p2.toUpperCase());
+  };
+
+  async function buildPrintForContact(idx){
+    const titulo = el('#sheetTitle').value.trim() || 'Planilha';
+    const rows = groupedRowsByContact.get(idx) || [];
+    if(!headers.length || !rows.length) return null;
+
+    const padX = 14, padY = 10, gapTitle = 10, rowH = 28, headerH = 30, border = 1;
+    const font = '12px Segoe UI, Roboto, Arial, sans-serif';
+    const fontBold = '600 12px Segoe UI, Roboto, Arial, sans-serif';
+    const titleFont = '600 16px Segoe UI, Roboto, Arial, sans-serif';
+
+    const tmp = document.createElement('canvas');
+    const ctx = tmp.getContext('2d');
+    ctx.font = font;
+    const colW = headers.map(h=>{
+      let w = ctx.measureText(h).width + 20;
+      rows.forEach(r=>{ w = Math.max(w, ctx.measureText(String(r[h]??'')).width + 20); });
+      return Math.min(Math.max(80, Math.ceil(w)), 360);
+    });
+    const tableW = colW.reduce((a,b)=>a+b,0) + border*(headers.length+1);
+    const tableH = headerH + rows.length*rowH + border*(rows.length+1);
+    const titleH = 24;
+    const totalW = Math.ceil(padX*2 + tableW);
+    const totalH = Math.ceil(padY*2 + titleH + gapTitle + tableH);
+
+    tmp.width = totalW; tmp.height = totalH;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,totalW,totalH);
+    ctx.font = titleFont; ctx.fillStyle = '#0f172a';
+    ctx.fillText(titulo, padX, padY + 18);
+
+    let x = padX, y = padY + titleH + gapTitle;
+    ctx.font = font;
+    ctx.fillStyle = '#f8fafc'; ctx.fillRect(x, y, tableW, headerH);
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = border;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x+tableW, y);
+    ctx.moveTo(x, y+headerH); ctx.lineTo(x+tableW, y+headerH);
+    for(let i=1;i<=rows.length;i++){
+      const yy = y + headerH + i*rowH;
+      ctx.moveTo(x, yy); ctx.lineTo(x+tableW, yy);
+    }
+    ctx.stroke();
+
+    let cx = x;
+    for(let c=0;c<=headers.length;c++){
+      ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx, y + headerH + rows.length*rowH); ctx.stroke();
+      cx += colW[c]||0;
+    }
+
+    ctx.fillStyle = '#111827'; ctx.font = fontBold;
+    let rx = x + border + 8;
+    headers.forEach((h,i)=>{ ctx.fillText(String(h), rx, y + 20); rx += colW[i]; });
+
+    ctx.font = font; ctx.fillStyle = '#111827';
+    let ry = y + headerH + 20;
+    rows.forEach(r=>{
+      let rxx = x + border + 8;
+      headers.forEach((h,i)=>{ ctx.fillText(String(r[h]??''), rxx, ry); rxx += colW[i]; });
+      ry += rowH;
+    });
+
+    const targetW = Math.min(520, totalW);
+    const scale = targetW / totalW;
+    const targetH = Math.round(totalH * scale);
+
+    const small = document.createElement('canvas');
+    small.width = targetW; small.height = targetH;
+    const c2 = small.getContext('2d');
+    c2.imageSmoothingEnabled = true;
+    c2.imageSmoothingQuality = 'high';
+    c2.drawImage(tmp, 0, 0, targetW, targetH);
+
+    return new Promise(resolve=>{
+      small.toBlob(blob=>{
+        if(!blob) return resolve(null);
+        const dataUrl = small.toDataURL('image/png');
+        resolve({ blob, dataUrl });
+      }, 'image/png', 0.95);
+    });
+  }
+
+  function buildMessageHTML(contact, dataUrl, bodyHTMLClean){
+    const introText = makeGreeting(contact);
+    const intro = `<p>${introText}</p>`;
+    const content = bodyHTMLClean ? bodyHTMLClean : '';
+    const imgHTML = dataUrl ? `<div class="separator"></div><div class="imgwrap"><img src="${dataUrl}" alt="print da planilha"></div>` : '';
+    return `<div class="richmsg">${intro}${content}${imgHTML}</div>`;
+  }
+  function htmlToPlainText(html){
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    return (tmp.textContent || tmp.innerText || '').trim();
+  }
+  function buildMessagePlainText(contact, bodyHTMLClean){
+    const intro = makeGreeting(contact);
+    const bodyTxt = htmlToPlainText(bodyHTMLClean || '');
+    const partBody = bodyTxt ? `\n\n${bodyTxt}` : '';
+    return `${intro}${partBody}`;
+  }
+
+  async function updatePreview(){
+    const box = el('#previewBox');
+    const bodyHTMLClean = getEditorHTMLClean();
+    let idx = contacts.findIndex(c=>c.selected); if(idx<0) idx = contacts.length?0:-1;
+    if(idx<0){
+      const previewIntro = (greetingInput.value || DEFAULT_GREETING).replace(/\{nome\}/gi,'Fulano');
+      box.innerHTML = `<div class="richmsg"><p>${previewIntro}</p><p class="muted">[sua mensagem]</p></div><div class="separator"></div><div class="imgwrap"><div class="muted">[Imagem do print aparecerá aqui]</div></div>`;
+      return;
+    }
+    let img = imageCacheByContact.get(idx);
+    if(!img){ img = await buildPrintForContact(idx); imageCacheByContact.set(idx, img); }
+    const html = buildMessageHTML(contacts[idx], img?.dataUrl || '', bodyHTMLClean);
+    box.innerHTML = html;
+  }
+  messageBody.addEventListener('input', updatePreview);
+  messageBody.addEventListener('keyup', updatePreview);
+
+  async function copyMessage(htmlMsg, textMsg, imgBlob){
+    if (navigator.clipboard && window.ClipboardItem){
+      try{
+        const itemData = { 'text/html': new Blob([htmlMsg], {type:'text/html'}), 'text/plain': new Blob([textMsg], {type:'text/plain'}) };
+        if(imgBlob){ itemData['image/png'] = imgBlob; }
+        await navigator.clipboard.write([ new ClipboardItem(itemData) ]);
+        return 'html';
+      }catch(e){}
+    }
+    const div = document.createElement('div');
+    div.contentEditable = 'true';
+    div.style.position='fixed'; div.style.left='-99999px'; div.style.top='0'; div.style.opacity='0';
+    div.innerHTML = htmlMsg;
+    document.body.appendChild(div);
+    const range = document.createRange(); range.selectNodeContents(div);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    const ok = document.execCommand('copy');
+    sel.removeAllRanges(); div.remove();
+    if (ok) return 'html';
+    await navigator.clipboard.writeText(textMsg);
+    return 'text';
+  }
+
+  function setCollapsed(wrap, collapsed){
+    if(collapsed){
+      wrap.classList.add('collapsed');
+      const btn = wrap.querySelector('[data-toggle]'); if(btn) btn.textContent = 'Expandir';
+    }else{
+      wrap.classList.remove('collapsed');
+      const btn = wrap.querySelector('[data-toggle]'); if(btn) btn.textContent = 'Recolher';
+    }
+  }
+
+  /* ===== TEAMS deep links ===== */
+  const teamsDeepLinkBase = (email)=> 'https://teams.microsoft.com/l/chat/0/0?users=' + encodeURIComponent(email);
+  const teamsDeepLinkWithMessage = (email, messageText)=> teamsDeepLinkBase(email) + (messageText ? '&message=' + encodeURIComponent(messageText) : '');
+  function openTeamsChatNoPrefill(email){
+    if(!email){ alert('Contato sem e-mail.'); return; }
+    const url = teamsDeepLinkBase(email); // sem mensagem pré-carregada
+    window.open(url, '_blank', 'noopener');
+  }
+  function openTeamsChatWithMessage(email, messageText){
+    if(!email){ alert('Contato sem e-mail.'); return; }
+    const url = teamsDeepLinkWithMessage(email, messageText || '');
+    window.open(url, '_blank', 'noopener');
+  }
+
+  function buildAndMountCardForIdx(idx, bodyHTMLClean){
+    const c = contacts[idx];
+    const img = imageCacheByContact.get(idx) || null;
+    const htmlMsg = buildMessageHTML(c, img?.dataUrl || '', bodyHTMLClean);
+    const textMsg = buildMessagePlainText(c, bodyHTMLClean);
+
+    const wrap = document.createElement('div');
+    wrap.className='msg';
+    wrap.innerHTML = `
+      <div class="msg__head">
+        <strong>${titleCaseName(c.nome)}</strong>
+        <span class="badge">${c.email||'sem email'}</span>
+        <span class="badge">Prefixo: ${c.prefixo||'-'}</span>
+        <button class="msg__toggle" data-toggle>Recolher</button>
+      </div>
+      <div class="msg__body">
+        <div class="richmsg" data-htmlmsg></div>
+        <div class="toolbar" style="margin-top:8px">
+          <button class="btn" data-copy>Copiar mensagem (com imagem)</button>
+          <button class="btn ghost" data-copyopen ${c.email?'':'disabled'}>Copiar e abrir chat (sem imagem)</button>
+          <button class="btn ghost" data-openchat ${c.email?'':'disabled'}>Abrir chat no Teams (este)</button>
+        </div>
+      </div>
+    `;
+    wrap.querySelector('[data-htmlmsg]').innerHTML = htmlMsg;
+    el('#output').appendChild(wrap);
+
+    wrap.querySelector('[data-toggle]').addEventListener('click', ()=>{
+      setCollapsed(wrap, !wrap.classList.contains('collapsed'));
+    });
+
+    // Copiar com imagem
+    wrap.querySelector('[data-copy]').addEventListener('click', async ()=>{
+      let ensureImg = imageCacheByContact.get(idx);
+      if(!ensureImg){ ensureImg = await buildPrintForContact(idx); imageCacheByContact.set(idx, ensureImg); }
+      const mode = await copyMessage(
+        buildMessageHTML(c, ensureImg?.dataUrl || '', bodyHTMLClean),
+        buildMessagePlainText(c, bodyHTMLClean),
+        ensureImg?.blob
+      );
+      const b=wrap.querySelector('[data-copy]');
+      b.textContent = mode==='html' ? 'Copiado!' : 'Copiado (texto)';
+      setTimeout(()=>b.textContent='Copiar mensagem (com imagem)',1200);
+      setCollapsed(wrap, true);
+    });
+
+    // Copiar (sem imagem) e abrir chat — abre com mensagem pré-carregada
+    const btnCopyOpen = wrap.querySelector('[data-copyopen]');
+    if(btnCopyOpen){
+      btnCopyOpen.addEventListener('click', async ()=>{
+        const bodyClean = getEditorHTMLClean();
+        await copyMessage(
+          buildMessageHTML(c, '', bodyClean),
+          buildMessagePlainText(c, bodyClean),
+          null
+        );
+        openTeamsChatWithMessage(c.email, buildMessagePlainText(c, bodyClean));
+        setCollapsed(wrap, true);
+      });
+    }
+
+    // Abrir chat (este) — sem mensagem pré-carregada, sem copiar antes
+    const btnChat = wrap.querySelector('[data-openchat]');
+    if(btnChat){
+      btnChat.addEventListener('click', ()=>{
+        openTeamsChatNoPrefill(c.email);
+        setCollapsed(wrap, true);
+      });
+    }
+  }
+
+  function sortSelectedIndices(selectedIdx){
+    const mode = (el('#sortOrder')?.value || 'original');
+    if(mode === 'nome_az'){
+      const arr = selectedIdx.slice().map(i=>({
+        i, key: stripAccents(firstName(contacts[i]?.nome || '')).toLowerCase()
+      }));
+      arr.sort((a,b)=> a.key.localeCompare(b.key));
+      return arr.map(x=>x.i);
+    }
+    return selectedIdx;
+  }
+
+  async function regenerateOutput(){
+    const bodyHTMLClean = getEditorHTMLClean();
+    const target = el('#output'); target.innerHTML='';
+    let selectedIdx = contacts.map((c,i)=> c.selected ? i : -1).filter(i=>i>=0);
+    if(!selectedIdx.length){ target.innerHTML = `<div class="muted">Nenhum contato selecionado.</div>`; return; }
+
+    selectedIdx = sortSelectedIndices(selectedIdx);
+
+    for(const idx of selectedIdx){
+      if(!imageCacheByContact.get(idx)){
+        const img = await buildPrintForContact(idx);
+        imageCacheByContact.set(idx, img);
+      }
+    }
+    selectedIdx.forEach(idx=> buildAndMountCardForIdx(idx, bodyHTMLClean));
+    log('Mensagens geradas (Campo 4)');
+  }
+
+  el('#generateMsgs').addEventListener('click', async ()=>{ await regenerateOutput(); });
+
+  /* ===== Botão TEAMS (teste no campo 3) ===== */
+  const zipBtn = el('#downloadZip');
+  if(zipBtn){
+    zipBtn.textContent = 'Abrir chat no Teams (teste)';
+    zipBtn.addEventListener('click', async ()=>{
+      const firstIdx = contacts.findIndex(c=>c.selected);
+      if(firstIdx<0){ alert('Selecione ao menos um contato na lista.'); return; }
+      const bodyHTMLClean = getEditorHTMLClean();
+      let ensureImg = imageCacheByContact.get(firstIdx);
+      if(!ensureImg){ ensureImg = await buildPrintForContact(firstIdx); imageCacheByContact.set(firstIdx, ensureImg); }
+      await copyMessage(
+        buildMessageHTML(contacts[firstIdx], ensureImg?.dataUrl || '', bodyHTMLClean),
+        buildMessagePlainText(contacts[firstIdx], bodyHTMLClean),
+        ensureImg?.blob
+      );
+      // no teste, mantemos a abertura COM mensagem pré-carregada
+      openTeamsChatWithMessage(contacts[firstIdx].email, buildMessagePlainText(contacts[firstIdx], bodyHTMLClean));
+      log('Deep link do Teams aberto (teste) + conteúdo copiado para colar no chat.');
+    });
+  }
+
+  /* ===== Atualizações globais ===== */
+  function updatePreviewOnChange(){ updatePreview(); }
+  messageBody.addEventListener('input', debounce(updatePreviewOnChange,120));
+
+  async function doFullRefresh(){
+    const rawContacts = el('#contactsInput').value.trim();
+    if(rawContacts){
+      const parsed = parseContacts(rawContacts);
+      if(parsed.length){ contacts = parsed; }
+    }
+    try{
+      const { headers: h0, rowsAoA } = extractFromEditable(sheetPaste);
+      if(h0?.length && rowsAoA?.length){
+        const hdrRowInput = el('#headerRow').value.trim();
+        const aoaFull = [h0, ...rowsAoA];
+        let hdrIdx = 0;
+        if(hdrRowInput){ const n=parseInt(hdrRowInput,10); if(Number.isInteger(n) && n>=1 && n<=aoaFull.length){ hdrIdx=n-1; } }
+        const headersRow = aoaFull[hdrIdx] || aoaFull[0];
+        headers = headersRow.map(x=>String(x||'').trim());
+        const dataAoA = aoaFull.slice(hdrIdx+1).filter(r=> r.some(v=>String(v).trim()!==''));
+        rowsAll = dataAoA.map(r=>{ const o={}; headers.forEach((h,i)=> o[h]=(r[i]??'').toString().trim()); return o; });
+        imageCacheByContact.clear();
+        el('#attachStats').textContent = `Planilha colada: ${rowsAll.length} linha(s) • ${headers.length} coluna(s)`;
+        el('#clearAttach').disabled = rowsAll.length===0;
+        el('#downloadZip').disabled = rowsAll.length===0;
+      }else{
+        el('#attachStats').textContent = 'Sem dados';
+      }
+      refreshPreviewFromEditable();
+    }catch(e){ showError('Falha ao atualizar dados colados.', e?.message||String(e)); logErr(e?.message||String(e)); }
+
+    recountAndAutoselect();
+    await updatePreview();
+    await regenerateOutput();
+    log('Tudo atualizado');
+  }
+  el('#refreshContacts').addEventListener('click', doFullRefresh);
+  el('#refreshMsg').addEventListener('click', doFullRefresh);
+  el('#refreshSheet').addEventListener('click', doFullRefresh);
+  el('#refreshAll').addEventListener('click', doFullRefresh);
+  el('#sortOrder').addEventListener('change', regenerateOutput);
+
+  log('Pronto — carregado');
+});
+</script>
+</body>
+</html>
